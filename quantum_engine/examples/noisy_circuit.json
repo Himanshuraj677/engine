@@ -1,0 +1,26 @@
+{
+  "qubits": 2,
+  "gates": [
+    {
+      "gate_type": "H",
+      "target": 0,
+      "noise": {
+        "noise_type": "bit_flip",
+        "probability": 0.01
+      }
+    },
+    {
+      "gate_type": "CNOT",
+      "control": 0,
+      "target": 1,
+      "noise": {
+        "noise_type": "depolarizing",
+        "probability": 0.02
+      }
+    },
+    {
+      "gate_type": "H",
+      "target": 1
+    }
+  ]
+}

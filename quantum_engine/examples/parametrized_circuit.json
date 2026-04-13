@@ -1,0 +1,24 @@
+{
+  "qubits": 2,
+  "gates": [
+    {
+      "gate_type": "H",
+      "target": 0
+    },
+    {
+      "gate_type": "RY",
+      "target": 1,
+      "parameter": 1.570796
+    },
+    {
+      "gate_type": "CNOT",
+      "control": 0,
+      "target": 1
+    },
+    {
+      "gate_type": "RZ",
+      "target": 0,
+      "parameter": 0.785398
+    }
+  ]
+}
