@@ -44,15 +44,18 @@ impl ExecutionPlan {
     /// Create execution plan from circuit (greedy layer assignment)
     pub fn from_circuit(circuit: &Circuit) -> Result<Self> {
         let mut layers: Vec<GateLayer> = Vec::new();
+        let mut min_layer = 0usize;
 
         for gate in &circuit.gates {
             let mut placed = false;
+            let mut assigned_layer = min_layer;
 
-            // Try to place in existing layer
-            for layer in &mut layers {
-                if layer.can_add(gate) {
-                    layer.add(gate.clone());
+            // Try to place from min_layer onwards to preserve gate order.
+            for layer_idx in min_layer..layers.len() {
+                if layers[layer_idx].can_add(gate) {
+                    layers[layer_idx].add(gate.clone());
                     placed = true;
+                    assigned_layer = layer_idx;
                     break;
                 }
             }
@@ -62,7 +65,10 @@ impl ExecutionPlan {
                 let mut new_layer = GateLayer { gates: vec![] };
                 new_layer.add(gate.clone());
                 layers.push(new_layer);
+                assigned_layer = layers.len() - 1;
             }
+
+            min_layer = assigned_layer;
         }
 
         Ok(ExecutionPlan { layers })
@@ -91,17 +97,7 @@ impl ExecutionPlan {
 
 /// Extract qubits used by a gate
 fn extract_qubits(gate: &GateInstruction) -> Vec<usize> {
-    let mut qubits = Vec::new();
-
-    if let Some(target) = gate.target {
-        qubits.push(target);
-    }
-
-    if let Some(control) = gate.control {
-        qubits.push(control);
-    }
-
-    qubits
+    gate.involved_qubits()
 }
 
 #[cfg(test)]
@@ -114,7 +110,12 @@ mod tests {
             gate_type: "H".to_string(),
             target: Some(0),
             control: None,
+            controls: None,
             parameter: None,
+            matrix: None,
+            condition: None,
+            cbit: None,
+            repeat: None,
             noise: None,
         };
 
@@ -122,7 +123,12 @@ mod tests {
             gate_type: "H".to_string(),
             target: Some(0),
             control: None,
+            controls: None,
             parameter: None,
+            matrix: None,
+            condition: None,
+            cbit: None,
+            repeat: None,
             noise: None,
         };
 
@@ -137,7 +143,12 @@ mod tests {
             gate_type: "H".to_string(),
             target: Some(0),
             control: None,
+            controls: None,
             parameter: None,
+            matrix: None,
+            condition: None,
+            cbit: None,
+            repeat: None,
             noise: None,
         };
 
@@ -145,7 +156,12 @@ mod tests {
             gate_type: "H".to_string(),
             target: Some(1),
             control: None,
+            controls: None,
             parameter: None,
+            matrix: None,
+            condition: None,
+            cbit: None,
+            repeat: None,
             noise: None,
         };
 
@@ -163,25 +179,42 @@ mod tests {
                     gate_type: "H".to_string(),
                     target: Some(0),
                     control: None,
+                    controls: None,
                     parameter: None,
+                    matrix: None,
+                    condition: None,
+                    cbit: None,
+                    repeat: None,
                     noise: None,
                 },
                 GateInstruction {
                     gate_type: "H".to_string(),
                     target: Some(1),
                     control: None,
+                    controls: None,
                     parameter: None,
+                    matrix: None,
+                    condition: None,
+                    cbit: None,
+                    repeat: None,
                     noise: None,
                 },
                 GateInstruction {
                     gate_type: "CNOT".to_string(),
                     control: Some(0),
                     target: Some(1),
+                    controls: None,
                     parameter: None,
+                    matrix: None,
+                    condition: None,
+                    cbit: None,
+                    repeat: None,
                     noise: None,
                 },
             ],
+            classical_bits: None,
             global_noise: None,
+            readout_noise: None,
         };
 
         let plan = ExecutionPlan::from_circuit(&circuit).unwrap();

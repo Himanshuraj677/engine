@@ -49,6 +49,26 @@ impl MeasurementResult {
 
     /// Sample from the state using Monte Carlo method (importance sampling)
     pub fn sample(state: &QuantumState, shots: usize) -> Result<Self> {
+        let mut rng = thread_rng();
+        Self::sample_with_rng(state, shots, &mut rng)
+    }
+
+    /// Sample from the state using Monte Carlo method with a caller-provided RNG.
+    pub fn sample_with_rng<R: Rng + ?Sized>(
+        state: &QuantumState,
+        shots: usize,
+        rng: &mut R,
+    ) -> Result<Self> {
+        Self::sample_with_readout_error_with_rng(state, shots, None, rng)
+    }
+
+    /// Sample with optional independent per-bit readout error probability.
+    pub fn sample_with_readout_error_with_rng<R: Rng + ?Sized>(
+        state: &QuantumState,
+        shots: usize,
+        readout_error_prob: Option<f64>,
+        rng: &mut R,
+    ) -> Result<Self> {
         let probabilities = state.probabilities();
 
         // Filter out near-zero probabilities for numerical stability
@@ -63,13 +83,20 @@ impl MeasurementResult {
                 reason: format!("Failed to create weighted distribution: {}", e),
             })?;
 
-        let mut rng = thread_rng();
         let mut counts = BTreeMap::new();
 
         // Perform shots
         for _ in 0..shots {
-            let idx = dist.sample(&mut rng);
-            let bitstring = format_bitstring(idx, state.num_qubits());
+            let idx = dist.sample(rng);
+            let mut bitstring = format_bitstring(idx, state.num_qubits());
+            if let Some(p) = readout_error_prob {
+                if !(0.0..=1.0).contains(&p) {
+                    return Err(Error::MeasurementError {
+                        reason: format!("Readout error probability must be in [0, 1], got {}", p),
+                    });
+                }
+                bitstring = apply_readout_error_to_bitstring(&bitstring, p, rng);
+            }
             *counts.entry(bitstring).or_insert(0) += 1;
         }
 
@@ -90,11 +117,20 @@ impl MeasurementResult {
     /// Measure a single qubit, returning its value and collapsed state index
     /// This is used for mid-circuit measurement
     pub fn measure_single(state: &mut QuantumState, target: usize) -> Result<(bool, usize)> {
+        let mut rng = thread_rng();
+        Self::measure_single_with_rng(state, target, &mut rng)
+    }
+
+    /// Measure a single qubit with a caller-provided RNG.
+    pub fn measure_single_with_rng<R: Rng + ?Sized>(
+        state: &mut QuantumState,
+        target: usize,
+        rng: &mut R,
+    ) -> Result<(bool, usize)> {
         let marginal = state.marginal_distribution(target)?;
         let _prob_0 = marginal[0];
         let prob_1 = marginal[1];
 
-        let mut rng = thread_rng();
         let result = rng.gen::<f64>() < prob_1;
 
         // Project to measured state
@@ -160,6 +196,23 @@ impl MeasurementResult {
     }
 }
 
+fn apply_readout_error_to_bitstring<R: Rng + ?Sized>(
+    bitstring: &str,
+    prob: f64,
+    rng: &mut R,
+) -> String {
+    let mut out = String::with_capacity(bitstring.len());
+    for ch in bitstring.chars() {
+        let flipped = rng.gen::<f64>() < prob;
+        if flipped {
+            out.push(if ch == '0' { '1' } else { '0' });
+        } else {
+            out.push(ch);
+        }
+    }
+    out
+}
+
 /// Format an index as a binary bitstring (big-endian)
 fn format_bitstring(mut idx: usize, num_qubits: usize) -> String {
     let mut result = String::with_capacity(num_qubits);
@@ -173,6 +226,7 @@ fn format_bitstring(mut idx: usize, num_qubits: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rand::{rngs::StdRng, SeedableRng};
 
     #[test]
     fn test_bitstring_format() {
@@ -197,5 +251,50 @@ mod tests {
         // First qubit should be in state |0⟩
         assert!(result.counts.contains_key("0"));
         assert!(result.counts["0"] > 900); // Should be mostly 0
+    }
+
+    #[test]
+    fn test_sampling_reproducible_with_seeded_rng() {
+        let mut state = crate::state::QuantumState::new(1).unwrap();
+        crate::gates::gate_h(&mut state, 0).unwrap();
+
+        let mut rng1 = StdRng::seed_from_u64(42);
+        let mut rng2 = StdRng::seed_from_u64(42);
+
+        let r1 = MeasurementResult::sample_with_rng(&state, 256, &mut rng1).unwrap();
+        let r2 = MeasurementResult::sample_with_rng(&state, 256, &mut rng2).unwrap();
+
+        assert_eq!(r1.counts, r2.counts);
+    }
+
+    #[test]
+    fn test_measure_single_reproducible_with_seeded_rng() {
+        let mut state1 = crate::state::QuantumState::new(1).unwrap();
+        let mut state2 = crate::state::QuantumState::new(1).unwrap();
+        crate::gates::gate_h(&mut state1, 0).unwrap();
+        crate::gates::gate_h(&mut state2, 0).unwrap();
+
+        let mut rng1 = StdRng::seed_from_u64(99);
+        let mut rng2 = StdRng::seed_from_u64(99);
+
+        let m1 = MeasurementResult::measure_single_with_rng(&mut state1, 0, &mut rng1).unwrap();
+        let m2 = MeasurementResult::measure_single_with_rng(&mut state2, 0, &mut rng2).unwrap();
+
+        assert_eq!(m1, m2);
+        assert_eq!(state1.probabilities(), state2.probabilities());
+    }
+
+    #[test]
+    fn test_sampling_with_readout_error() {
+        let state = crate::state::QuantumState::new(1).unwrap();
+        let mut rng = StdRng::seed_from_u64(7);
+        let result = MeasurementResult::sample_with_readout_error_with_rng(
+            &state,
+            128,
+            Some(1.0),
+            &mut rng,
+        )
+        .unwrap();
+        assert!(result.counts.get("1").copied().unwrap_or(0) > 120);
     }
 }

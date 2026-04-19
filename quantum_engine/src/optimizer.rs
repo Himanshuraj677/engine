@@ -1,6 +1,6 @@
 //! Circuit optimization: gate fusion, redundancy removal
 
-use crate::circuit::{Circuit, GateInstruction};
+use crate::circuit::Circuit;
 use crate::error::Result;
 
 /// Optimize a circuit by removing redundant gates and fusing operations
@@ -44,8 +44,10 @@ fn remove_self_inverses(circuit: &Circuit) -> Result<Circuit> {
 
     Ok(Circuit {
         qubits: circuit.qubits,
+        classical_bits: circuit.classical_bits,
         gates,
         global_noise: circuit.global_noise.clone(),
+        readout_noise: circuit.readout_noise.clone(),
     })
 }
 
@@ -85,8 +87,10 @@ fn fuse_single_qubit_gates(circuit: &Circuit) -> Result<Circuit> {
 
     Ok(Circuit {
         qubits: circuit.qubits,
+        classical_bits: circuit.classical_bits,
         gates: optimized,
         global_noise: circuit.global_noise.clone(),
+        readout_noise: circuit.readout_noise.clone(),
     })
 }
 
@@ -103,19 +107,21 @@ pub fn circuit_depth(circuit: &Circuit) -> usize {
     let mut depth = vec![0; circuit.qubits];
 
     for gate in &circuit.gates {
-        if let Some(target) = gate.target {
-            let current = depth[target];
-            if let Some(control) = gate.control {
-                let gate_type = gate.gate_type.to_uppercase();
-                // Two-qubit gates increase depth of both qubits
-                if matches!(gate_type.as_str(), "CNOT" | "CX" | "SWAP") {
-                    depth[target] = current + 1;
-                    depth[control] = depth[control].max(current) + 1;
-                } else {
-                    depth[target] = current + 1;
-                }
-            } else {
-                depth[target] = current + 1;
+        let involved = gate.involved_qubits();
+        if involved.is_empty() {
+            continue;
+        }
+
+        let base = involved
+            .iter()
+            .map(|&q| depth[q])
+            .max()
+            .unwrap_or(0)
+            + 1;
+
+        for &q in &involved {
+            if q < depth.len() {
+                depth[q] = depth[q].max(base);
             }
         }
     }
@@ -128,16 +134,14 @@ pub fn count_two_qubit_gates(circuit: &Circuit) -> usize {
     circuit
         .gates
         .iter()
-        .filter(|gate| {
-            let gate_type = gate.gate_type.to_uppercase();
-            matches!(gate_type.as_str(), "CNOT" | "CX" | "SWAP")
-        })
+        .filter(|gate| gate.involved_qubits().len() == 2)
         .count()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::circuit::GateInstruction;
 
     #[test]
     fn test_remove_self_inverses() {
@@ -148,18 +152,30 @@ mod tests {
                     gate_type: "H".to_string(),
                     target: Some(0),
                     control: None,
+                    controls: None,
                     parameter: None,
+                    matrix: None,
+                    condition: None,
+                    cbit: None,
+                    repeat: None,
                     noise: None,
                 },
                 GateInstruction {
                     gate_type: "H".to_string(),
                     target: Some(0),
                     control: None,
+                    controls: None,
                     parameter: None,
+                    matrix: None,
+                    condition: None,
+                    cbit: None,
+                    repeat: None,
                     noise: None,
                 },
             ],
+            classical_bits: None,
             global_noise: None,
+            readout_noise: None,
         };
 
         let optimized = remove_self_inverses(&circuit).unwrap();
@@ -175,18 +191,30 @@ mod tests {
                     gate_type: "H".to_string(),
                     target: Some(0),
                     control: None,
+                    controls: None,
                     parameter: None,
+                    matrix: None,
+                    condition: None,
+                    cbit: None,
+                    repeat: None,
                     noise: None,
                 },
                 GateInstruction {
                     gate_type: "CNOT".to_string(),
                     control: Some(0),
                     target: Some(1),
+                    controls: None,
                     parameter: None,
+                    matrix: None,
+                    condition: None,
+                    cbit: None,
+                    repeat: None,
                     noise: None,
                 },
             ],
+            classical_bits: None,
             global_noise: None,
+            readout_noise: None,
         };
 
         assert_eq!(circuit_depth(&circuit), 2);

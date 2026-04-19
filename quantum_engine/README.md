@@ -25,7 +25,7 @@ This quantum simulator implements a **state-vector simulation** approach with:
 ```
 quantum_engine/
 ├── state/           # Quantum state vector (Vec<Complex64>)
-├── gates/           # Gate implementations (X, Y, Z, H, S, T, RX, RY, RZ, CNOT, SWAP)
+├── gates/           # Gate implementations (X, Y, Z, H, S, T, RX, RY, RZ, CNOT, CZ, CP, CCX, SWAP, UNITARY)
 ├── circuit/         # Circuit parsing & validation (JSON)
 ├── simulator/       # Main execution engine
 ├── noise/           # Noise models (realistic quantum errors)
@@ -54,6 +54,9 @@ cargo build --release
 ```bash
 # Simulate Bell state
 cargo run --release -- simulate examples/bell_state.json --shots 1000
+
+# Deterministic run with seed + JSON output for automation
+cargo run --release -- simulate examples/readout_noise.json --shots 2000 --seed 42 --format json
 
 # Validate a circuit
 cargo run --release -- validate examples/ghz_state.json
@@ -100,10 +103,24 @@ Circuits are defined in JSON format:
 
 #### Two-Qubit Gates
 - `CNOT` / `CX` — Controlled-NOT
+- `CZ` — Controlled-Z
+- `CP(ϕ)` — Controlled-phase
+- `CCX` — Toffoli
 - `SWAP` — Qubit swap
+
+#### Interop/Utility Gates
+- `UNITARY` / `U` — Custom single-qubit 2x2 unitary
+- `RESET` — Reset qubit to |0⟩
+- `BARRIER` — Scheduling barrier/no-op
 
 #### Measurement
 - `MEASURE` — Mid-circuit measurement (collapses state)
+- Optional classical destination: `cbit`
+
+#### Classical Control
+- Optional circuit-level `classical_bits`
+- Gate-level `condition` on classical bits
+- Gate-level `repeat` for repeated execution
 
 ### Noise Configuration
 
@@ -124,6 +141,14 @@ Add noise to individual gates:
 - `"bit_flip"` — |0⟩ ↔ |1⟩ with probability p
 - `"phase_flip"` — |1⟩ → -|1⟩ with probability p
 - `"depolarizing"` — Replace with random Pauli with probability p
+- `"amplitude_damping"` — |1⟩ → |0⟩ energy dissipation
+- `"t1_t2_relaxation"` — combined relaxation/dephasing model
+- `"coherent_over_rotation"` — deterministic over-rotation around axis
+- `"crosstalk"` — coupled-qubit phase errors
+- `"kraus"` — custom single-qubit Kraus operators
+- `"composite"` — channel chaining/composition
+
+Readout noise can be configured separately using circuit-level `readout_noise` with `"readout_error"`.
 
 Global noise (applies to all gates):
 
@@ -196,6 +221,21 @@ Creates (|000⟩ + |111⟩)/√2:
     {"gate_type": "H", "target": 0},
     {"gate_type": "RY", "target": 1, "parameter": 1.5708},
     {"gate_type": "CNOT", "control": 0, "target": 1}
+  ]
+}
+```
+
+### 5. Conditional + Repeat + Reset
+
+```json
+{
+  "qubits": 2,
+  "classical_bits": 2,
+  "gates": [
+    {"gate_type": "H", "target": 0},
+    {"gate_type": "MEASURE", "target": 0, "cbit": 1},
+    {"gate_type": "X", "target": 1, "condition": {"register": 1, "value": true}, "repeat": 1},
+    {"gate_type": "RESET", "target": 0}
   ]
 }
 ```

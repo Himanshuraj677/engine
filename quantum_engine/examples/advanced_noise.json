@@ -1,0 +1,27 @@
+{
+  "qubits": 2,
+  "global_noise": {
+    "noise_type": "COMPOSITE",
+    "probability": 1.0,
+    "channels": [
+      {
+        "noise_type": "T1_T2_RELAXATION",
+        "probability": 1.0,
+        "t1": 50.0,
+        "t2": 30.0,
+        "dt": 1.0
+      },
+      {
+        "noise_type": "COHERENT_OVER_ROTATION",
+        "probability": 1.0,
+        "axis": "Z",
+        "angle": 0.02
+      }
+    ]
+  },
+  "gates": [
+    {"gate_type": "H", "target": 0},
+    {"gate_type": "CNOT", "control": 0, "target": 1},
+    {"gate_type": "RY", "target": 1, "parameter": 0.7}
+  ]
+}

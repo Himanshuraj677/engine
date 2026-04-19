@@ -231,6 +231,103 @@ pub fn gate_swap(state: &mut QuantumState, qubit1: usize, qubit2: usize) -> Resu
     Ok(())
 }
 
+/// Apply a single-qubit unitary with optional controls.
+/// If `controls` is empty, this behaves as a standard single-qubit gate.
+pub fn gate_controlled_unitary(
+    state: &mut QuantumState,
+    controls: &[usize],
+    target: usize,
+    matrix: [[Complex64; 2]; 2],
+) -> Result<()> {
+    validate_qubit(target, state.num_qubits())?;
+
+    let mut control_mask = 0usize;
+    for &control in controls {
+        validate_qubit(control, state.num_qubits())?;
+        if control == target {
+            return Err(Error::InvalidGateParameters {
+                reason: "Control and target must be different qubits".to_string(),
+            });
+        }
+        control_mask |= 1 << control;
+    }
+
+    apply_single_qubit_unitary(state, control_mask, target, matrix);
+    Ok(())
+}
+
+/// Controlled-Z gate.
+pub fn gate_cz(state: &mut QuantumState, control: usize, target: usize) -> Result<()> {
+    gate_controlled_unitary(
+        state,
+        &[control],
+        target,
+        [
+            [Complex64::new(1.0, 0.0), Complex64::new(0.0, 0.0)],
+            [Complex64::new(0.0, 0.0), Complex64::new(-1.0, 0.0)],
+        ],
+    )
+}
+
+/// Controlled-phase gate with phase parameter phi.
+pub fn gate_cp(state: &mut QuantumState, control: usize, target: usize, phi: f64) -> Result<()> {
+    let phase = Complex64::new(phi.cos(), phi.sin());
+    gate_controlled_unitary(
+        state,
+        &[control],
+        target,
+        [
+            [Complex64::new(1.0, 0.0), Complex64::new(0.0, 0.0)],
+            [Complex64::new(0.0, 0.0), phase],
+        ],
+    )
+}
+
+/// Toffoli (CCX) gate.
+pub fn gate_ccx(
+    state: &mut QuantumState,
+    control1: usize,
+    control2: usize,
+    target: usize,
+) -> Result<()> {
+    gate_controlled_unitary(
+        state,
+        &[control1, control2],
+        target,
+        [
+            [Complex64::new(0.0, 0.0), Complex64::new(1.0, 0.0)],
+            [Complex64::new(1.0, 0.0), Complex64::new(0.0, 0.0)],
+        ],
+    )
+}
+
+/// Apply arbitrary single-qubit unitary matrix.
+pub fn gate_unitary(state: &mut QuantumState, target: usize, matrix: [[Complex64; 2]; 2]) -> Result<()> {
+    gate_controlled_unitary(state, &[], target, matrix)
+}
+
+/// Internal single-qubit unitary application with a precomputed controls mask.
+fn apply_single_qubit_unitary(
+    state: &mut QuantumState,
+    control_mask: usize,
+    target: usize,
+    matrix: [[Complex64; 2]; 2],
+) {
+    let target_mask = 1 << target;
+    let size = state.size();
+    let amplitudes = state.amplitudes_mut();
+
+    for i in 0..size {
+        if (i & target_mask) == 0 && (i & control_mask) == control_mask {
+            let j = i | target_mask;
+            let a0 = amplitudes[i];
+            let a1 = amplitudes[j];
+            amplitudes[i] = matrix[0][0] * a0 + matrix[0][1] * a1;
+            amplitudes[j] = matrix[1][0] * a0 + matrix[1][1] * a1;
+        }
+    }
+}
+
 /// Helper: Validate qubit index
 #[inline]
 fn validate_qubit(qubit: usize, num_qubits: usize) -> Result<()> {
@@ -279,6 +376,37 @@ mod tests {
     fn test_rx_rotation() {
         let mut state = QuantumState::new(1).unwrap();
         gate_rx(&mut state, 0, PI).unwrap(); // Should rotate to |1⟩
+        assert!(state.probability(1).unwrap() > 0.99);
+    }
+
+    #[test]
+    fn test_cz_phase_flip() {
+        let mut state = QuantumState::new(2).unwrap();
+        gate_x(&mut state, 0).unwrap();
+        gate_x(&mut state, 1).unwrap();
+        let before = state.get_amplitude(3).unwrap();
+        gate_cz(&mut state, 0, 1).unwrap();
+        let after = state.get_amplitude(3).unwrap();
+        assert!((after + before).norm() < 1e-10);
+    }
+
+    #[test]
+    fn test_ccx() {
+        let mut state = QuantumState::new(3).unwrap();
+        gate_x(&mut state, 0).unwrap();
+        gate_x(&mut state, 1).unwrap();
+        gate_ccx(&mut state, 0, 1, 2).unwrap();
+        assert!(state.probability(7).unwrap() > 0.99);
+    }
+
+    #[test]
+    fn test_custom_unitary_x_matrix() {
+        let mut state = QuantumState::new(1).unwrap();
+        let x = [
+            [Complex64::new(0.0, 0.0), Complex64::new(1.0, 0.0)],
+            [Complex64::new(1.0, 0.0), Complex64::new(0.0, 0.0)],
+        ];
+        gate_unitary(&mut state, 0, x).unwrap();
         assert!(state.probability(1).unwrap() > 0.99);
     }
 }

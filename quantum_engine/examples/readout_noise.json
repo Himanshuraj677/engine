@@ -1,0 +1,10 @@
+{
+  "qubits": 1,
+  "readout_noise": {
+    "noise_type": "READOUT_ERROR",
+    "probability": 0.1
+  },
+  "gates": [
+    {"gate_type": "H", "target": 0}
+  ]
+}

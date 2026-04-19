@@ -1,0 +1,146 @@
+{
+  "qubits": 3,
+  "classical_bits": 3,
+  "global_noise": {
+    "noise_type": "COMPOSITE",
+    "probability": 1.0,
+    "channels": [
+      {
+        "noise_type": "BIT_FLIP",
+        "probability": 0.005
+      },
+      {
+        "noise_type": "T1_T2_RELAXATION",
+        "probability": 1.0,
+        "t1": 80.0,
+        "t2": 50.0,
+        "dt": 1.0
+      }
+    ]
+  },
+  "readout_noise": {
+    "noise_type": "READOUT_ERROR",
+    "probability": 0.02
+  },
+  "gates": [
+    {
+      "gate_type": "H",
+      "target": 0,
+      "noise": {
+        "noise_type": "COHERENT_OVER_ROTATION",
+        "probability": 1.0,
+        "axis": "Z",
+        "angle": 0.01
+      }
+    },
+    {
+      "gate_type": "CNOT",
+      "control": 0,
+      "target": 1
+    },
+    {
+      "gate_type": "CP",
+      "controls": [
+        1
+      ],
+      "target": 2,
+      "parameter": 0.4
+    },
+    {
+      "gate_type": "CZ",
+      "control": 2,
+      "target": 0
+    },
+    {
+      "gate_type": "CCX",
+      "controls": [
+        0,
+        1
+      ],
+      "target": 2
+    },
+    {
+      "gate_type": "UNITARY",
+      "target": 1,
+      "matrix": [
+        [
+          [0.0, 0.0],
+          [1.0, 0.0]
+        ],
+        [
+          [1.0, 0.0],
+          [0.0, 0.0]
+        ]
+      ]
+    },
+    {
+      "gate_type": "MEASURE",
+      "target": 0,
+      "cbit": 0
+    },
+    {
+      "gate_type": "X",
+      "target": 2,
+      "condition": {
+        "register": 0,
+        "value": true
+      },
+      "repeat": 2,
+      "noise": {
+        "noise_type": "CROSSTALK",
+        "probability": 0.02,
+        "coupled_qubits": [
+          1
+        ]
+      }
+    },
+    {
+      "gate_type": "MEASURE",
+      "target": 2,
+      "cbit": 2
+    },
+    {
+      "gate_type": "BARRIER",
+      "controls": [
+        0,
+        1
+      ],
+      "target": 2
+    },
+    {
+      "gate_type": "RESET",
+      "target": 2
+    },
+    {
+      "gate_type": "RY",
+      "target": 1,
+      "parameter": 0.2,
+      "noise": {
+        "noise_type": "KRAUS",
+        "probability": 1.0,
+        "kraus": [
+          [
+            [
+              [1.0, 0.0],
+              [0.0, 0.0]
+            ],
+            [
+              [0.0, 0.0],
+              [0.9486832980505138, 0.0]
+            ]
+          ],
+          [
+            [
+              [0.0, 0.0],
+              [0.31622776601683794, 0.0]
+            ],
+            [
+              [0.0, 0.0],
+              [0.0, 0.0]
+            ]
+          ]
+        ]
+      }
+    }
+  ]
+}

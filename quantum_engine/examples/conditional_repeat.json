@@ -1,0 +1,16 @@
+{
+  "qubits": 2,
+  "classical_bits": 2,
+  "gates": [
+    {"gate_type": "H", "target": 0},
+    {"gate_type": "MEASURE", "target": 0, "cbit": 1},
+    {
+      "gate_type": "X",
+      "target": 1,
+      "condition": {"register": 1, "value": true},
+      "repeat": 1
+    },
+    {"gate_type": "BARRIER"},
+    {"gate_type": "RESET", "target": 0}
+  ]
+}

@@ -9,6 +9,7 @@ pub mod circuit;
 pub mod simulator;
 pub mod noise;
 pub mod measurement;
+pub mod analysis;
 pub mod optimizer;
 pub mod runtime;
 pub mod error;
@@ -16,6 +17,7 @@ pub mod error;
 pub use circuit::Circuit;
 pub use simulator::Simulator;
 pub use measurement::MeasurementResult;
+pub use analysis::BlochVector;
 pub use error::{Error, Result};
 
 /// Version string for the engine

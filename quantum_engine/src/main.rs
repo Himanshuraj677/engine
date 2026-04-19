@@ -1,8 +1,9 @@
 //! CLI tool for quantum circuit simulation
 
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use quantum_engine::{Circuit, Simulator};
 use quantum_engine::simulator::SimulationConfig;
+use quantum_engine::simulator::SimulationResult;
 use std::fs;
 
 #[derive(Parser)]
@@ -15,6 +16,14 @@ struct Cli {
 
     #[arg(global = true, short, long)]
     verbose: bool,
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, ValueEnum)]
+enum OutputFormat {
+    /// Human-readable report.
+    Pretty,
+    /// JSON payload for automation.
+    Json,
 }
 
 #[derive(Subcommand)]
@@ -36,6 +45,14 @@ enum Commands {
         /// Disable noise injection
         #[arg(long)]
         no_noise: bool,
+
+        /// Random seed (0 = random seed)
+        #[arg(long, default_value = "0")]
+        seed: u64,
+
+        /// Output format for stdout and output files
+        #[arg(long, value_enum, default_value = "pretty")]
+        format: OutputFormat,
 
         /// Output file (default: stdout)
         #[arg(short, long)]
@@ -73,9 +90,11 @@ fn main() {
             shots,
             no_optimize,
             no_noise,
+            seed,
+            format,
             output,
         } => {
-            simulate_circuit(&circuit, shots, !no_optimize, !no_noise, output);
+            simulate_circuit(&circuit, shots, !no_optimize, !no_noise, seed, format, output);
         }
         Commands::Validate { circuit } => {
             validate_circuit(&circuit);
@@ -91,9 +110,13 @@ fn simulate_circuit(
     shots: usize,
     optimize: bool,
     apply_noise: bool,
+    seed: u64,
+    format: OutputFormat,
     output_file: Option<String>,
 ) {
-    println!("Loading circuit from: {}", circuit_file);
+    if matches!(format, OutputFormat::Pretty) {
+        println!("Loading circuit from: {}", circuit_file);
+    }
 
     let circuit_json = match fs::read_to_string(circuit_file) {
         Ok(content) => content,
@@ -111,13 +134,15 @@ fn simulate_circuit(
         }
     };
 
-    println!("Circuit: {} qubits, {} gates", circuit.qubits, circuit.gates.len());
+    if matches!(format, OutputFormat::Pretty) {
+        println!("Circuit: {} qubits, {} gates", circuit.qubits, circuit.gates.len());
+    }
 
     let config = SimulationConfig {
         shots,
         optimize,
         apply_noise,
-        seed: 0,
+        seed,
     };
 
     let simulator = Simulator::new(config);
@@ -129,32 +154,64 @@ fn simulate_circuit(
         }
     };
 
-    // Print results
-    println!("\n=== Simulation Results ===");
-    println!("Execution time: {:.2} ms", result.execution_time_ms);
-    println!("Circuit depth: {}", result.circuit_depth);
-    println!("Total gates: {}", result.circuit_gates);
-    println!("Two-qubit gates: {}", result.two_qubit_gates);
-    println!("\nMeasurement results ({} shots):", result.measurement.shots);
-    println!("Probabilities:");
-
-    for (state, prob) in &result.measurement.probabilities {
-        println!("  {}: {:.4} ({} counts)", state, prob, result.measurement.counts.get(state).unwrap_or(&0));
-    }
-
-    if let Some(most_likely) = result.measurement.most_likely_state() {
-        println!("\nMost likely state: {} (probability: {:.4})", most_likely.0, most_likely.1);
-    }
+    print_simulation_result(&result, format);
 
     // Write to file if specified
     if let Some(output) = output_file {
-        if let Ok(json) = result.measurement.to_json() {
-            if let Err(e) = fs::write(&output, json) {
-                eprintln!("Error writing output file: {}", e);
-            } else {
-                println!("\nResults written to: {}", output);
+        match serialize_simulation_result(&result, format) {
+            Ok(payload) => {
+                if let Err(e) = fs::write(&output, payload) {
+                    eprintln!("Error writing output file: {}", e);
+                } else {
+                    println!("\nResults written to: {}", output);
+                }
+            }
+            Err(e) => {
+                eprintln!("Failed to serialize results: {}", e);
             }
         }
+    }
+}
+
+fn serialize_simulation_result(result: &SimulationResult, format: OutputFormat) -> Result<String, serde_json::Error> {
+    match format {
+        OutputFormat::Pretty => serde_json::to_string_pretty(result),
+        OutputFormat::Json => serde_json::to_string(result),
+    }
+}
+
+fn print_simulation_result(result: &SimulationResult, format: OutputFormat) {
+    match format {
+        OutputFormat::Pretty => {
+            println!("\n=== Simulation Results ===");
+            println!("Execution time: {:.2} ms", result.execution_time_ms);
+            println!("Circuit depth: {}", result.circuit_depth);
+            println!("Total gates: {}", result.circuit_gates);
+            println!("Two-qubit gates: {}", result.two_qubit_gates);
+            println!("\nMeasurement results ({} shots):", result.measurement.shots);
+            println!("Probabilities:");
+
+            for (state, prob) in &result.measurement.probabilities {
+                println!(
+                    "  {}: {:.4} ({} counts)",
+                    state,
+                    prob,
+                    result.measurement.counts.get(state).unwrap_or(&0)
+                );
+            }
+
+            if let Some(most_likely) = result.measurement.most_likely_state() {
+                println!(
+                    "\nMost likely state: {} (probability: {:.4})",
+                    most_likely.0,
+                    most_likely.1
+                );
+            }
+        }
+        OutputFormat::Json => match serde_json::to_string(result) {
+            Ok(json) => println!("{}", json),
+            Err(e) => eprintln!("Failed to serialize result as JSON: {}", e),
+        },
     }
 }
 
@@ -205,4 +262,16 @@ fn print_examples() {
 
     println!("5. Quantum Fourier Transform (2 qubits):");
     println!(r#"{{"qubits": 2, "gates": [{{"gate_type": "H", "target": 0}}, {{"gate_type": "RZ", "target": 0, "parameter": 0.785398}}, {{"gate_type": "H", "target": 1}}, {{"gate_type": "SWAP", "control": 0, "target": 1}}]}}"#);
+    println!();
+
+    println!("6. Advanced noise chain (see examples/advanced_noise.json):");
+    println!(r#"{{"qubits": 2, "global_noise": {{"noise_type": "COMPOSITE", "probability": 1.0, "channels": [...] }}, "gates": [...]}}"#);
+    println!();
+
+    println!("7. Conditional + repeat + reset (see examples/conditional_repeat.json):");
+    println!(r#"{{"qubits": 2, "classical_bits": 2, "gates": [{{"gate_type": "MEASURE", "target": 0, "cbit": 1}}, {{"gate_type": "X", "target": 1, "condition": {{"register": 1, "value": true}}, "repeat": 1}}, {{"gate_type": "RESET", "target": 0}}]}}"#);
+    println!();
+
+    println!("8. Readout noise model (see examples/readout_noise.json):");
+    println!(r#"{{"qubits": 1, "readout_noise": {{"noise_type": "READOUT_ERROR", "probability": 0.1}}, "gates": [{{"gate_type": "H", "target": 0}}]}}"#);
 }
